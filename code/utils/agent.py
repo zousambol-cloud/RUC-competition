@@ -1,67 +1,56 @@
-import openai
+from openai import OpenAI
 import backoff
 import time
-import random
-from openai.error import RateLimitError, APIError, ServiceUnavailableError, APIConnectionError
-from .openai_utils import OutOfQuotaException, AccessTerminatedException
-from .openai_utils import num_tokens_from_string, model2max_context
-
-support_models = ['gpt-3.5-turbo', 'gpt-3.5-turbo-0301', 'gpt-4', 'gpt-4-0314']
 
 class Agent:
-    def __init__(self, model_name: str, name: str, temperature: float, sleep_time: float=0) -> None:
+    def __init__(self, name: str, temperature: float, openai_api_key: str, sleep_time: float=0) -> None:
         """Create an agent
 
         Args:
-            model_name(str): model name
             name (str): name of this agent
             temperature (float): higher values make the output more random, while lower values make it more focused and deterministic
+            openai_api_key (str): OpenAI API key
             sleep_time (float): sleep because of rate limits
         """
-        self.model_name = model_name
+        self.client = OpenAI(
+            api_key=openai_api_key,
+            base_url="https://api.deepseek.com/v1"
+        )
         self.name = name
         self.temperature = temperature
+        self.openai_api_key = openai_api_key
         self.memory_lst = []
         self.sleep_time = sleep_time
+        # 固定使用deepseek模型
+        self.model = "deepseek-chat"
 
-    @backoff.on_exception(backoff.expo, (RateLimitError, APIError, ServiceUnavailableError, APIConnectionError), max_tries=20)
-    def query(self, messages: "list[dict]", max_tokens: int, api_key: str, temperature: float) -> str:
+    @backoff.on_exception(backoff.expo, Exception, max_tries=20)
+    def query(self, messages: "list[dict]", max_tokens: int, temperature: float) -> str:
         """make a query
 
         Args:
             messages (list[dict]): chat history in turbo format
             max_tokens (int): max token in api call
-            api_key (str): openai api key
             temperature (float): sampling temperature
-
-        Raises:
-            OutOfQuotaException: the apikey has out of quota
-            AccessTerminatedException: the apikey has been ban
 
         Returns:
             str: the return msg
         """
         time.sleep(self.sleep_time)
-        assert self.model_name in support_models, f"Not support {self.model_name}. Choices: {support_models}"
         try:
-            if self.model_name in support_models:
-                response = openai.ChatCompletion.create(
-                    model=self.model_name,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    api_key=api_key,
-                )
-                gen = response['choices'][0]['message']['content']
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            gen = response.choices[0].message.content
             return gen
 
-        except RateLimitError as e:
-            if "You exceeded your current quota, please check your plan and billing details" in e.user_message:
-                raise OutOfQuotaException(api_key)
-            elif "Your access was terminated due to violation of our policies" in e.user_message:
-                raise AccessTerminatedException(api_key)
-            else:
-                raise e
+        except Exception as e:
+            # 简化异常处理
+            print(f"Error: {e}")
+            raise
 
     def set_meta_prompt(self, meta_prompt: str):
         """Set the meta_prompt
@@ -93,8 +82,18 @@ class Agent:
 
         Args:
         """
-        # query
-        num_context_token = sum([num_tokens_from_string(m["content"], self.model_name) for m in self.memory_lst])
-        max_token = model2max_context[self.model_name] - num_context_token
-        return self.query(self.memory_lst, max_token, api_key=self.openai_api_key, temperature=temperature if temperature else self.temperature)
-
+        
+        def count_tokens(text):
+            try:
+                import tiktoken
+                encoding = tiktoken.get_encoding("cl100k_base")
+                return len(encoding.encode(text))
+            except:
+                # 如果tiktoken不可用，使用简单的估算方法
+                return len(text) // 4
+        
+        # 计算上下文token数量
+        num_context_token = sum([count_tokens(m["content"]) for m in self.memory_lst])
+        # 设置一个合理的max_token值
+        max_token = 2000
+        return self.query(self.memory_lst, max_token, temperature=temperature if temperature else self.temperature)

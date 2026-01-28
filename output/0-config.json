@@ -1,0 +1,17 @@
+{
+    "source": "什么是人工智能？",
+    "reference": "人工智能是指由人制造出来的机器所表现出来的智能",
+    "base_answer": "",
+    "topic": "",
+    "base_prompt": "Answer the following question: ##source##",
+    "player_meta_prompt": "You are a debater. Hello and welcome to the debate competition. Our objective is to find the correct answer to the question.\nThe debate topic is: ##source##",
+    "moderator_meta_prompt": "You are a moderator. There will be two debaters involved in a debate about the correct answer to the question: \"##source##\". At the end of each round, you will evaluate the answers based on:\n1. Accuracy: Whether the answer is correct.\n2. Reasoning: The quality of the reasoning provided.",
+    "affirmative_prompt": "You think the correct answer is: ##base_answer## Restate the answer and provide your reasons.",
+    "negative_prompt": "##aff_ans##\n\nYou disagree with my answer. Provide your answer and reasons.",
+    "moderator_prompt": "Now the ##round## round of debate for both sides has ended.\n\nAffirmative side arguing:\n##aff_ans##\n\nNegative side arguing: ##neg_ans##\n\nYou, as the moderator, will evaluate both sides' answers and determine if there is a clear preference. If so, please summarize your reasons and give the final answer. Now please output your answer in json format: {\"Whether there is a preference\": \"Yes or No\", \"Supported Side\": \"Affirmative or Negative\", \"Reason\": \"\", \"debate_answer\": \"\"}.",
+    "judge_prompt_last1": "Affirmative side arguing: ##aff_ans##\n\nNegative side arguing: ##neg_ans##\n\nNow, what answer candidates do we have? Present them without reasons.",
+    "judge_prompt_last2": "Therefore, what is the correct answer to the question: \"##source##\". Please summarize your reasons and give the final answer. Now please output your answer in json format: {\"Reason\": \"\", \"debate_answer\": \"\"}.",
+    "debate_prompt": "##oppo_ans##\n\nDo you agree with my perspective? Please provide your reasons and answer.",
+    "src_lng": "Chinese",
+    "tgt_lng": "Chinese"
+}

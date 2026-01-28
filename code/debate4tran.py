@@ -35,23 +35,20 @@ NAME_LIST=[
 ]
 
 class DebatePlayer(Agent):
-    def __init__(self, model_name: str, name: str, temperature:float, openai_api_key: str, sleep_time: float) -> None:
+    def __init__(self, name: str, temperature:float, openai_api_key: str, sleep_time: float) -> None:
         """Create a player in the debate
 
         Args:
-            model_name(str): model name
             name (str): name of this player
             temperature (float): higher values make the output more random, while lower values make it more focused and deterministic
             openai_api_key (str): As the parameter name suggests
             sleep_time (float): sleep because of rate limits
         """
-        super(DebatePlayer, self).__init__(model_name, name, temperature, sleep_time)
-        self.openai_api_key = openai_api_key
+        super(DebatePlayer, self).__init__(name, temperature, openai_api_key, sleep_time)
 
 
 class Debate:
     def __init__(self,
-            model_name: str='gpt-3.5-turbo', 
             temperature: float=0, 
             num_players: int=3, 
             save_file_dir: str=None,
@@ -63,7 +60,6 @@ class Debate:
         """Create a debate
 
         Args:
-            model_name (str): openai model name
             temperature (float): higher values make the output more random, while lower values make it more focused and deterministic
             num_players (int): num of players
             save_file_dir (str): dir path to json file
@@ -73,13 +69,13 @@ class Debate:
             sleep_time (float): sleep because of rate limits
         """
 
-        self.model_name = model_name
         self.temperature = temperature
         self.num_players = num_players
         self.save_file_dir = save_file_dir
         self.openai_api_key = openai_api_key
         self.max_round = max_round
         self.sleep_time = sleep_time
+        # 不再需要model_name，因为使用固定的deepseek模型
 
         # init save file
         now = datetime.now()
@@ -87,7 +83,7 @@ class Debate:
         self.save_file = {
             'start_time': current_time,
             'end_time': '',
-            'model_name': model_name,
+            'model_name': 'deepseek-chat',
             'temperature': temperature,
             'num_players': num_players,
             'success': False,
@@ -105,7 +101,7 @@ class Debate:
         self.save_file.update(prompts)
         self.init_prompt()
 
-        if self.save_file['base_translation'] == "":
+        if self.save_file.get('base_translation', '') == "" and self.save_file.get('base_answer', '') == "":
             self.create_base()
 
         # creat&init agents
@@ -115,26 +111,38 @@ class Debate:
 
     def init_prompt(self):
         def prompt_replace(key):
-            self.save_file[key] = self.save_file[key].replace("##src_lng##", self.save_file["src_lng"]).replace("##tgt_lng##", self.save_file["tgt_lng"]).replace("##source##", self.save_file["source"]).replace("##base_translation##", self.save_file["base_translation"])
+            src_lng = self.save_file.get("src_lng", "")
+            tgt_lng = self.save_file.get("tgt_lng", "")
+            source = self.save_file.get("source", "")
+            base_translation = self.save_file.get("base_translation", "")
+            base_answer = self.save_file.get("base_answer", "")
+            content = self.save_file[key]
+            content = content.replace("##src_lng##", src_lng)
+            content = content.replace("##tgt_lng##", tgt_lng)
+            content = content.replace("##source##", source)
+            content = content.replace("##base_translation##", base_translation)
+            content = content.replace("##base_answer##", base_answer)
+            
+            self.save_file[key] = content
         prompt_replace("base_prompt")
         prompt_replace("player_meta_prompt")
         prompt_replace("moderator_meta_prompt")
         prompt_replace("judge_prompt_last2")
 
     def create_base(self):
-        print(f"\n===== Translation Task =====\n{self.save_file['base_prompt']}\n")
-        agent = DebatePlayer(model_name=self.model_name, name='Baseline', temperature=self.temperature, openai_api_key=self.openai_api_key, sleep_time=self.sleep_time)
+        print(f"\n===== Question Answering Task =====\n{self.save_file['base_prompt']}\n")
+        agent = DebatePlayer(name='Baseline', temperature=self.temperature, openai_api_key=self.openai_api_key, sleep_time=self.sleep_time)
         agent.add_event(self.save_file['base_prompt'])
-        base_translation = agent.ask()
-        agent.add_memory(base_translation)
-        self.save_file['base_translation'] = base_translation
-        self.save_file['affirmative_prompt'] = self.save_file['affirmative_prompt'].replace("##base_translation##", base_translation)
+        base_answer = agent.ask()
+        agent.add_memory(base_answer)
+        self.save_file['base_answer'] = base_answer
+        self.save_file['affirmative_prompt'] = self.save_file['affirmative_prompt'].replace("##base_answer##", base_answer)
         self.save_file['players'][agent.name] = agent.memory_lst
 
     def creat_agents(self):
         # creates players
         self.players = [
-            DebatePlayer(model_name=self.model_name, name=name, temperature=self.temperature, openai_api_key=self.openai_api_key, sleep_time=self.sleep_time) for name in NAME_LIST
+            DebatePlayer(name=name, temperature=self.temperature, openai_api_key=self.openai_api_key, sleep_time=self.sleep_time) for name in NAME_LIST
         ]
         self.affirmative = self.players[0]
         self.negative = self.players[1]
@@ -174,7 +182,7 @@ class Debate:
         
         self.save_file['end_time'] = current_time
         json_str = json.dumps(self.save_file, ensure_ascii=False, indent=4)
-        with open(save_file_path, 'w') as f:
+        with open(save_file_path, 'w', encoding='utf-8') as f:
             f.write(json_str)
 
     def broadcast(self, msg: str):
@@ -212,7 +220,7 @@ class Debate:
 
         for round in range(self.max_round - 1):
 
-            if self.mod_ans["debate_translation"] != '':
+            if self.mod_ans.get("debate_answer", "") != '':
                 break
             else:
                 print(f"===== Debate Round-{round+2} =====\n")
@@ -229,13 +237,13 @@ class Debate:
                 self.moderator.add_memory(self.mod_ans)
                 self.mod_ans = eval(self.mod_ans)
 
-        if self.mod_ans["debate_translation"] != '':
+        if self.mod_ans.get("debate_answer", "") != '':
             self.save_file.update(self.mod_ans)
             self.save_file['success'] = True
 
         # ultimate deadly technique.
         else:
-            judge_player = DebatePlayer(model_name=self.model_name, name='Judge', temperature=self.temperature, openai_api_key=self.openai_api_key, sleep_time=self.sleep_time)
+            judge_player = DebatePlayer(name='Judge', temperature=self.temperature, openai_api_key=self.openai_api_key, sleep_time=self.sleep_time)
             aff_ans = self.affirmative.memory_lst[2]['content']
             neg_ans = self.negative.memory_lst[2]['content']
 
@@ -252,7 +260,7 @@ class Debate:
             judge_player.add_memory(ans)
             
             ans = eval(ans)
-            if ans["debate_translation"] != '':
+            if ans.get("debate_answer", "") != '':
                 self.save_file['success'] = True
                 # save file
             self.save_file.update(ans)
@@ -270,7 +278,6 @@ def parse_args():
     parser.add_argument("-lp", "--lang-pair", type=str, required=True, help="Language pair")
     parser.add_argument("-k", "--api-key", type=str, required=True, help="OpenAI api key")
     parser.add_argument("-m", "--model-name", type=str, default="gpt-3.5-turbo", help="Model name")
-    parser.add_argument("-t", "--temperature", type=float, default=0, help="Sampling temperature")
 
     return parser.parse_args()
 
@@ -280,15 +287,17 @@ if __name__ == "__main__":
     openai_api_key = args.api_key
 
     current_script_path = os.path.abspath(__file__)
-    MAD_path = current_script_path.rsplit("/", 2)[0]
+    # 使用os.path模块处理路径，确保跨平台兼容
+    MAD_path = os.path.dirname(os.path.dirname(current_script_path))
 
     src_lng, tgt_lng = args.lang_pair.split('-')
     src_full = Language.make(language=src_lng).display_name()
     tgt_full = Language.make(language=tgt_lng).display_name()
 
-    config = json.load(open(f"{MAD_path}/code/utils/config4tran.json", "r"))
+    config_path = os.path.join(MAD_path, "code", "utils", "config4.json")
+    config = json.load(open(config_path, "r"))
 
-    inputs = open(args.input_file, "r").readlines()
+    inputs = open(args.input_file, "r", encoding="utf-8").readlines()
     inputs = [l.strip() for l in inputs]
 
     save_file_dir = args.output_dir
@@ -300,10 +309,18 @@ if __name__ == "__main__":
         # if f"{id}.json" in files:
         #     continue
 
-        prompts_path = f"{save_file_dir}/{id}-config.json"
+        prompts_path = os.path.join(save_file_dir, f"{id}-config.json")
 
-        config['source'] = input.split('\t')[0]
-        config['reference'] = input.split('\t')[1]
+        # 处理输入格式，支持制表符或空格分隔
+        if '\t' in input:
+            parts = input.split('\t')
+        else:
+            # 使用正则表达式分割，处理多个空格的情况
+            import re
+            parts = re.split('\s+', input, 1)
+        
+        config['source'] = parts[0]
+        config['reference'] = parts[1] if len(parts) > 1 else ''
         config['src_lng'] = src_full
         config['tgt_lng'] = tgt_full
 
@@ -313,4 +330,3 @@ if __name__ == "__main__":
         debate = Debate(save_file_dir=save_file_dir, num_players=3, openai_api_key=openai_api_key, prompts_path=prompts_path, temperature=0, sleep_time=0)
         debate.run()
         debate.save_file_to_json(id)
-
