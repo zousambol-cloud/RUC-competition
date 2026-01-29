@@ -49,10 +49,24 @@ JOIN US on this journey of exploring the interaction and debating capability wit
   ```shell
   pip3 install -r requirements.txt
   ```
-* Set your openai API_KEY in `debate4tran.sh`
-* Set your openai API_KEY in `interactive.py`
+* Set your DeepSeek API_KEY in `run.bat` (Windows) or `debate4tran.sh` (Linux/Mac)
+* Set your DeepSeek API_KEY in `interactive.py`
 
-**Run MAD**
+**Run MAD (Windows)**
+
+Simply run the batch file:
+
+```shell
+run.bat
+```
+
+Or run with custom parameters:
+
+```shell
+python .\code\debate4tran.py -i .\input.txt -o .\output -lp zh-zh -k your_deepseek_api_key
+```
+
+**Run MAD (Linux/Mac)**
 
 ```shell
 sh debate4tran.sh 
@@ -67,6 +81,10 @@ python3 interactive.py
 ```
 
 Or simply try our demo for translation [here](https://3a3262e6a138888bd4.gradio.live/).
+
+**Customize Debate Scenarios**
+
+To use different debate scenarios (e.g., QA, translation, etc.), modify the configuration file `code/utils/config4.json` to adjust the prompts for judge and debate agents.
 
 
 ## Main Results
